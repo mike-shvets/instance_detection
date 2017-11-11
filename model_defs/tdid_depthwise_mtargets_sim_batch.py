@@ -72,49 +72,40 @@ class TDID(nn.Module):
             target_features = target_data
 
     
-        #get cross correlation of each target's features with image features
-        #(same padding)
-        padding = (max(0,int(target_features.size()[2]/2)), 
-                         max(0,int(target_features.size()[3]/2)))
+                batchsize, channels, H, W = img_features.size()
+        _, _, h, w = target_features.size()
 
+        padding = (max(0,int(h/2)),
+                   max(0,int(w/2)))
 
-        ccs = []
-        diffs = []
-        for b_ind in range(img_features.size()[0]):
-            target_inds = network.np_to_variable(np.asarray([b_ind*2, b_ind*2+1]),
-                                                is_cuda=True, dtype=torch.LongTensor)
-            sample_targets1 = torch.index_select(target_features,0,target_inds[0])
-            sample_targets2 = torch.index_select(target_features,0,target_inds[1])
-            img_ind = network.np_to_variable(np.asarray([b_ind]),
-                                                is_cuda=True, dtype=torch.LongTensor)
-            sample_img = torch.index_select(img_features,0,img_ind)
+        targets1 = target_features[::2].contiguous()
+        targets2 = target_features[1::2].contiguous()
 
-            sample_targets1 = sample_targets1.view(-1,1,sample_targets1.size()[2], 
-                                                   sample_targets1.size()[3])
-            sample_targets2 = sample_targets2.view(-1,1,sample_targets2.size()[2], 
-                                                   sample_targets2.size()[3])
+        tf1_pooled = F.max_pool2d(targets1, (h, w))
+        tf2_pooled = F.max_pool2d(targets2, (h, w))
 
+        diff1 = img_features - tf1_pooled.expand_as(img_features)
+        diff2 = img_features - tf2_pooled.expand_as(img_features)
 
-            #get diff
-            tf1_pooled = F.max_pool2d(sample_targets1,(sample_targets1.size()[2],
-                                                       sample_targets1.size()[3]))
-            tf2_pooled = F.max_pool2d(sample_targets2,(sample_targets2.size()[2],
-                                                       sample_targets2.size()[3]))
+        diffs = torch.cat([diff1, diff2], 1)
 
-            diff1 = sample_img - tf1_pooled.permute(1,0,2,3).expand_as(sample_img)
-            diff2 = sample_img - tf2_pooled.permute(1,0,2,3).expand_as(sample_img)
-            diffs.append(torch.cat([diff1,diff2],1))
+        cc1 = F.conv2d(
+            img_features.view(1, -1, H, W),
+            targets1.view(-1, 1, h, w),
+            padding=padding,
+            groups=batchsize * groups,
+        )
+        cc1 = cc1[:, :, :H, :W].contiguous().view(batchsize, channels, H, W)
+
+        cc2 = F.conv2d(
+            img_features.view(1, -1, H, W),
+            targets2.view(-1, 1, h, w),
+            padding=padding,
+            groups=batchsize * groups,
+        )
+        cc2 = cc2[:, :, :H, :W].contiguous().view(batchsize, channels, H, W)
+        cc = torch.cat([cc1, cc2], dim=1)
  
-            #do cross corr      
-            cc1 = F.conv2d(sample_img,sample_targets1,padding=padding,groups=self.groups) 
-            cc2 = F.conv2d(sample_img,sample_targets2,padding=padding,groups=self.groups) 
-            cc = torch.cat([cc1,cc2],1)
-            cc = self.select_to_match_dimensions(cc,sample_img)
-            ccs.append(cc)
-
-        cc = torch.cat(ccs,0)
-        diffs = torch.cat(diffs,0)    
-        
         cc_conv = self.cc_conv1(cc)
         diff_conv = self.diff_conv1(diffs)
 
