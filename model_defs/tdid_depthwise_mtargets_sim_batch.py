@@ -72,7 +72,7 @@ class TDID(nn.Module):
             target_features = target_data
 
     
-                batchsize, channels, H, W = img_features.size()
+        batchsize, channels, H, W = img_features.size()
         _, _, h, w = target_features.size()
 
         padding = (max(0,int(h/2)),
@@ -93,7 +93,7 @@ class TDID(nn.Module):
             img_features.view(1, -1, H, W),
             targets1.view(-1, 1, h, w),
             padding=padding,
-            groups=batchsize * groups,
+            groups=batchsize * self.groups,
         )
         cc1 = cc1[:, :, :H, :W].contiguous().view(batchsize, channels, H, W)
 
@@ -101,7 +101,7 @@ class TDID(nn.Module):
             img_features.view(1, -1, H, W),
             targets2.view(-1, 1, h, w),
             padding=padding,
-            groups=batchsize * groups,
+            groups=batchsize * self.groups,
         )
         cc2 = cc2[:, :, :H, :W].contiguous().view(batchsize, channels, H, W)
         cc = torch.cat([cc1, cc2], dim=1)
